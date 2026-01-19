@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en" class="bg-gray-900 text-white">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WeatherPulse Dashboard</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Leaflet CSS for maps -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- Custom Tailwind config -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'sunny': '#fbbf24',
+            'cloudy': '#9ca3af',
+            'rainy': '#3b82f6',
+            'stormy': '#6b21a8',
+            'night': '#1e3a8a',
+          },
+          backgroundImage: {
+            'sunny-grad': 'linear-gradient(to bottom right, #fbbf24, #ef4444)',
+            'cloudy-grad': 'linear-gradient(to bottom right, #9ca3af, #6b7280)',
+            'rainy-grad': 'linear-gradient(to bottom right, #3b82f6, #1e40af)',
+            'stormy-grad': 'linear-gradient(to bottom right, #6b21a8, #3b0764)',
+            'night-grad': 'linear-gradient(to bottom right, #1e3a8a, #111827)',
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="min-h-screen bg-gray-900 transition-all duration-500" id="bodyBg">
+
+  <!-- Main Container -->
+  <div class="max-w-5xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+    
+    <!-- Header -->
+    <header class="mb-8">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+        <h1 class="text-3xl sm:text-4xl font-bold tracking-tight">WeatherPulse</h1>
+        
+        <div class="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+          <input
+            type="text"
+            id="searchInput"
+            placeholder="Search country or state..."
+            class="px-5 py-3 rounded-xl bg-gray-800/80 border border-gray-700 focus:outline-none focus:border-gray-500 w-full backdrop-blur-sm"
+          />
+          <button id="refreshBtn" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-semibold transition w-full sm:w-auto">
+            Refresh
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Loading State -->
+    <div id="loading" class="text-center py-20">
+      <p class="text-xl opacity-70">Loading data...</p>
+    </div>
+
+    <!-- Countries View (initial table) -->
+    <div id="countriesView" class="hidden">
+      <h2 class="text-2xl font-semibold mb-4">Countries</h2>
+      <div id="countriesContainer" class="bg-gray-800/30 rounded-xl overflow-hidden border border-gray-800">
+        <!-- Country rows injected here -->
+      </div>
+    </div>
+
+    <!-- States View (shown after clicking country) -->
+    <div id="statesView" class="hidden">
+      <button id="backToCountries" class="mb-6 text-blue-400 hover:text-blue-300 font-medium text-lg">
+        ← Back to Countries
+      </button>
+      <h2 id="countryName" class="text-2xl font-semibold mb-4">States in [Country]</h2>
+      <div id="statesContainer" class="bg-gray-800/30 rounded-xl overflow-hidden border border-gray-800">
+        <!-- State rows injected here -->
+      </div>
+    </div>
+
+    <!-- Weather Detail View (shown after clicking state) -->
+    <div id="weatherView" class="hidden">
+      <button id="backToStates" class="mb-6 text-blue-400 hover:text-blue-300 font-medium text-lg">
+        ← Back to States
+      </button>
+      
+      <!-- Map -->
+      <div class="mb-8">
+        <h3 class="text-2xl font-semibold mb-4">Map of [State], [Country]</h3>
+        <div id="map" class="h-64 rounded-2xl overflow-hidden border border-gray-700"></div>
+      </div>
+
+      <!-- Current Weather -->
+      <div class="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-8 mb-12 text-center md:text-left">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-8">
+          <div>
+            <h2 id="locationName" class="text-4xl font-bold mb-2"></h2>
+            <p id="currentCondition" class="text-xl text-gray-300 mb-4"></p>
+            <div class="text-6xl font-bold" id="currentTemp"></div>
+          </div>
+          <div class="flex flex-col gap-4 text-right md:text-left">
+            <p id="currentHumidity" class="text-lg"></p>
+            <p id="currentWind" class="text-lg"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hourly Forecast -->
+      <div class="mb-12">
+        <h3 class="text-2xl font-semibold mb-4">Hourly Forecast</h3>
+        <div id="hourlyForecast" class="flex overflow-x-auto gap-4 pb-4 snap-x snap-mandatory">
+          <!-- Hourly cards -->
+        </div>
+      </div>
+
+      <!-- 5-Day Forecast -->
+      <div>
+        <h3 class="text-2xl font-semibold mb-4">Weekly Forecast</h3>
+        <div id="dailyForecast" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <!-- Daily cards -->
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Leaflet JS for maps -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // Elements
+    const loading = document.getElementById('loading');
+    const countriesView = document.getElementById('countriesView');
+    const statesView = document.getElementById('statesView');
+    const weatherView = document.getElementById('weatherView');
+    const countriesContainer = document.getElementById('countriesContainer');
+    const statesContainer = document.getElementById('statesContainer');
+    const countryNameEl = document.getElementById('countryName');
+    const backToCountries = document.getElementById('backToCountries');
+    const backToStates = document.getElementById('backToStates');
+    const searchInput = document.getElementById('searchInput');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const bodyBg = document.getElementById('bodyBg');
+    const locationName = document.getElementById('locationName');
+    const currentCondition = document.getElementById('currentCondition');
+    const currentTemp = document.getElementById('currentTemp');
+    const currentHumidity = document.getElementById('currentHumidity');
+    const currentWind = document.getElementById('currentWind');
+    const hourlyForecast = document.getElementById('hourlyForecast');
+    const dailyForecast = document.getElementById('dailyForecast');
+
+    let allCountries = [];
+    let currentCountry = null;
+    let currentState = null;
+    let weatherUpdateInterval = null;
+    let map = null;
+
+    // Fetch countries and states (free API)
+    async function fetchCountries() {
+      loading.classList.remove('hidden');
+      countriesView.classList.add('hidden');
+      statesView.classList.add('hidden');
+      weatherView.classList.add('hidden');
+
+      try {
+        const res = await fetch('https://countriesnow.space/api/v0.1/countries/states');
+        const data = await res.json();
+        allCountries = data.data.sort((a, b) => a.name.localeCompare(b.name)); // Sort alphabetically
+        renderCountries(allCountries);
+      } catch (err) {
+        console.error(err);
+        countriesContainer.innerHTML = `<div class="text-center py-20 text-red-500">Failed to load countries. Try again later.</div>`;
+      } finally {
+        loading.classList.add('hidden');
+        countriesView.classList.remove('hidden');
+      }
+    }
+
+    // Render countries as thin rows
+    function renderCountries(countries) {
+      countriesContainer.innerHTML = '';
+      countries.forEach(country => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between px-4 py-3 hover:bg-gray-700/70 transition-all border-b border-gray-700/50 last:border-b-0 cursor-pointer';
+        row.innerHTML = `
+          <div class="flex items-center gap-3 flex-1">
+            <span class="text-sm font-semibold">${country.name}</span>
+          </div>
+          <span class="text-sm text-gray-400">${country.states.length} States</span>
+        `;
+        row.addEventListener('click', () => openStates(country));
+        countriesContainer.appendChild(row);
+      });
+    }
+
+    // Open states view
+    function openStates(country) {
+      currentCountry = country;
+      countryNameEl.textContent = `States in ${country.name}`;
+      renderStates(country.states);
+      countriesView.classList.add('hidden');
+      statesView.classList.remove('hidden');
+    }
+
+    // Render states as thin rows
+    function renderStates(states) {
+      statesContainer.innerHTML = '';
+      const sortedStates = states.sort((a, b) => a.name.localeCompare(b.name));
+      sortedStates.forEach(state => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between px-4 py-3 hover:bg-gray-700/70 transition-all border-b border-gray-700/50 last:border-b-0 cursor-pointer';
+        row.innerHTML = `
+          <div class="flex items-center gap-3 flex-1">
+            <span class="text-sm font-semibold">${state.name}</span>
+          </div>
+        `;
+        row.addEventListener('click', () => openWeather(state.name, currentCountry.name));
+        statesContainer.appendChild(row);
+      });
+    }
+
+    // Open weather view for state
+    async function openWeather(stateName, countryName) {
+      currentState = stateName;
+      statesView.classList.add('hidden');
+      weatherView.classList.remove('hidden');
+      loading.classList.remove('hidden');
+
+      try {
+        // Get lat/lon for state using Nominatim (free, no key)
+        const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(stateName + ', ' + countryName)}&format=json&limit=1`);
+        const geoData = await geoRes.json();
+        if (!geoData.length) throw new Error('Location not found');
+        const lat = geoData[0].lat;
+        const lon = geoData[0].lon;
+
+        // Init map
+        if (map) map.remove();
+        map = L.map('map').setView([lat, lon], 7); // Zoom level for state view
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+        L.marker([lat, lon]).addTo(map).bindPopup(`${stateName}, ${countryName}`);
+
+        // Fetch weather from Open-Meteo (no key!)
+        const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&hourly=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=auto`);
+        const weatherData = await weatherRes.json();
+
+        // Render weather
+        locationName.textContent = `${stateName}, ${countryName}`;
+        currentCondition.textContent = getWeatherDescription(weatherData.current.weather_code);
+        currentTemp.textContent = `${Math.round(weatherData.current.temperature_2m)}°C`;
+        currentHumidity.textContent = `Humidity: ${weatherData.current.relative_humidity_2m}%`;
+        currentWind.textContent = `Wind: ${weatherData.current.wind_speed_10m} m/s`;
+
+        // Change background based on condition
+        const conditionCode = weatherData.current.weather_code;
+        let gradClass = 'night-grad'; // Default
+        if (conditionCode === 0) gradClass = 'sunny-grad'; // Clear
+        else if (conditionCode >= 1 && conditionCode <= 3) gradClass = 'cloudy-grad'; // Cloudy
+        else if (conditionCode >= 51) gradClass = 'rainy-grad'; // Rain
+        bodyBg.className = `min-h-screen bg-gradient-to-br from-gray-900 to-gray-900 transition-all duration-500 bg-${gradClass}`;
+
+        // Hourly (next 8 hours)
+        hourlyForecast.innerHTML = '';
+        for (let i = 0; i < 8; i++) {
+          const hour = weatherData.hourly;
+          const card = document.createElement('div');
+          card.className = 'bg-gray-800/50 rounded-xl p-4 text-center min-w-[120px] snap-center';
+          card.innerHTML = `
+            <p class="text-sm">${new Date(hour.time[i]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+            <p class="text-lg font-bold">${Math.round(hour.temperature_2m[i])}°C</p>
+            <p class="text-xs capitalize">${getWeatherDescription(hour.weather_code[i])}</p>
+          `;
+          hourlyForecast.appendChild(card);
+        }
+
+        // Daily (5 days)
+        dailyForecast.innerHTML = '';
+        for (let i = 0; i < 5; i++) {
+          const day = weatherData.daily;
+          const card = document.createElement('div');
+          card.className = 'bg-gray-800/50 rounded-xl p-4 text-center';
+          card.innerHTML = `
+            <p class="text-sm">${new Date(day.time[i]).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+            <p class="text-2xl font-bold">${Math.round(day.temperature_2m_max[i])}°C / ${Math.round(day.temperature_2m_min[i])}°C</p>
+            <p class="text-xs capitalize">${getWeatherDescription(day.weather_code[i])}</p>
+          `;
+          dailyForecast.appendChild(card);
+        }
+
+      } catch (err) {
+        console.error(err);
+        locationName.textContent = 'Error loading weather: ' + err.message; // Better error message
+      } finally {
+        loading.classList.add('hidden');
+      }
+
+      // Auto-refresh weather every 5 min
+      if (weatherUpdateInterval) clearInterval(weatherUpdateInterval);
+      weatherUpdateInterval = setInterval(() => openWeather(currentState, currentCountry.name), 300000);
+    }
+
+    // Helper: Convert Open-Meteo weather code to description
+    function getWeatherDescription(code) {
+      const codes = {
+        0: 'Clear sky',
+        1: 'Mainly clear',
+        2: 'Partly cloudy',
+        3: 'Overcast',
+        45: 'Fog',
+        51: 'Light drizzle',
+        61: 'Light rain',
+        71: 'Light snow',
+        80: 'Rain showers',
+        95: 'Thunderstorm',
+        // Add more as needed from https://open-meteo.com/en/docs
+      };
+      return codes[code] || 'Unknown';
+    }
+
+    // Search filter (live on countries/states)
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.trim().toLowerCase();
+      if (countriesView.classList.contains('hidden')) {
+        // Filter states if in states view
+        const filteredStates = currentCountry.states.filter(s => s.name.toLowerCase().includes(query));
+        renderStates(filteredStates);
+      } else {
+        // Filter countries
+        const filteredCountries = allCountries.filter(c => c.name.toLowerCase().includes(query));
+        renderCountries(filteredCountries);
+      }
+    });
+
+    // Back buttons
+    backToCountries.addEventListener('click', () => {
+      statesView.classList.add('hidden');
+      countriesView.classList.remove('hidden');
+    });
+
+    backToStates.addEventListener('click', () => {
+      weatherView.classList.add('hidden');
+      statesView.classList.remove('hidden');
+      if (weatherUpdateInterval) clearInterval(weatherUpdateInterval);
+    });
+
+    // Refresh button (refreshes current view)
+    refreshBtn.addEventListener('click', () => {
+      if (!weatherView.classList.contains('hidden')) {
+        openWeather(currentState, currentCountry.name);
+      } else if (!statesView.classList.contains('hidden')) {
+        openStates(currentCountry);
+      } else {
+        fetchCountries();
+      }
+    });
+
+    // Initial load
+    fetchCountries();
+  </script>
+
+</body>
+</html>
